@@ -9687,6 +9687,7 @@ function refreshBubbleCfgFromHost(cb) {
           bubbleCfg = d.config
           bubbleLib = (d.config.lib && Array.isArray(d.config.lib)) ? JSON.parse(JSON.stringify(d.config.lib)) : []
           bubbleTapAdvance = d.config.tapAdvance === true // v727
+          bubbleJumpOnTap = d.config.jumpOnTap !== false // 默认开启，只有显式存过 false 才关
           try { applyBubbleCfgSeq() } catch (err) {}
         }
       })
@@ -9703,6 +9704,7 @@ function openBubbleEditorWithCache() {
     closeAudioGroupPanel()
     bubbleLib = (bubbleCfg && bubbleCfg.lib && Array.isArray(bubbleCfg.lib)) ? JSON.parse(JSON.stringify(bubbleCfg.lib)) : []
     bubbleTapAdvChk.checked = bubbleTapAdvance === true // v727：把已保存的开关状态显示出来
+    bubbleJumpOnTapChk.checked = bubbleJumpOnTap === true
     var list = []
     if (bubbleCfg && Array.isArray(bubbleCfg.items) && bubbleCfg.items.length) {
       list = bubbleCfg.items.slice()
@@ -9778,7 +9780,8 @@ function bubbleEditorSave() {
       var scrubbed = framesScrubDanglingRefs(items)
       // v727：开关随本窗口的「保存」一起落盘；保存成功后立即生效（不必重载）
       var tapAdv = bubbleTapAdvChk.checked === true
-      var payload = { v: 1, items: items, lib: bubbleLib, tapAdvance: tapAdv }
+      var jumpTap = bubbleJumpOnTapChk.checked === true
+      var payload = { v: 1, items: items, lib: bubbleLib, tapAdvance: tapAdv, jumpOnTap: jumpTap }
       // v815：框库只在"需要持久化"时写（有自定义框 / 曾经写过 / 保底改过）⇒ 老配置零 churn
       try {
         if (framesShouldPersist()) {
@@ -9790,6 +9793,7 @@ function bubbleEditorSave() {
       saveBubbleCfg(payload, function (ok) {
         if (ok !== false) {
           bubbleTapAdvance = tapAdv
+          bubbleJumpOnTap = jumpTap
           closeBubbleEditor()
           // v821：被删掉的框留下的引用已改回保底框 ⇒ 明确提示一次（决策 3）
           if (scrubbed > 0) {
@@ -11625,6 +11629,28 @@ bubbleTapAdvAsk.title = ''
 bubbleTapAdvRow.appendChild(bubbleTapAdvChk)
 bubbleTapAdvRow.appendChild(bubbleTapAdvLab)
 bubbleTapAdvRow.appendChild(bubbleTapAdvAsk)
+// 「点击工作提示泡泡自动跳转」总开关：与「点按角色推进泡泡队列」同一行、右端对齐（margin-left:auto 推到底）
+var bubbleJumpOnTapChk = document.createElement('input')
+bubbleJumpOnTapChk.type = 'checkbox'
+bubbleJumpOnTapChk.className = 'dshwv-check'
+bubbleJumpOnTapChk.id = 'dshwv-jumpontap'
+bubbleJumpOnTapChk.title = ''
+bubbleJumpOnTapChk.style.marginLeft = 'auto'
+var bubbleJumpOnTapLab = document.createElement('label')
+bubbleJumpOnTapLab.setAttribute('for', 'dshwv-jumpontap')
+bubbleJumpOnTapLab.style.cursor = 'pointer'
+bubbleJumpOnTapLab.style.fontSize = '12px'
+bubbleJumpOnTapLab.textContent = '点击工作提示泡泡自动跳转'
+var bubbleJumpOnTapAsk = dshwvAskDot(
+  '开启（默认）：点<b>等待气泡</b>（提问/授权）＝跳转到发起该挂起的会话并收起；点<b>任务结束气泡</b>＝跳转到刚跑完的那一轮所属会话并收起。<br><br>' +
+  '关闭：点<b>等待气泡</b> / <b>任务结束气泡</b>只收起，不跳转。'
+)
+bubbleJumpOnTapAsk.style.marginLeft = '0'
+bubbleJumpOnTapAsk.style.marginRight = '0'
+bubbleJumpOnTapAsk.title = ''
+bubbleTapAdvRow.appendChild(bubbleJumpOnTapChk)
+bubbleTapAdvRow.appendChild(bubbleJumpOnTapLab)
+bubbleTapAdvRow.appendChild(bubbleJumpOnTapAsk)
 bubbleCard.appendChild(bubbleTapAdvRow)
 // 按钮行
 var bubbleBtns = document.createElement('div')
@@ -13882,8 +13908,8 @@ bubbleBox.addEventListener('click', function (e) {
   e.stopPropagation()
   if (!bubbleShown) return
   if (costBubbleActive) {
-    // 消耗金额泡泡：点击关闭（确认）
-    hideCostBubble()
+    // 消耗金额泡泡：点击关闭（确认）→ 跳转到发起该轮的会话
+    hideCostBubble(true)
     return
   }
   // 点击泡泡 = 跳到下一项；已是最后一项则关闭（点鲸鱼才是从队列开头开始）
@@ -14318,6 +14344,10 @@ var bubbleLib = [] // 可选模块库(当前会话编辑用,随配置保存):[{i
 //   关闭（默认）= 点鲸鱼时，正在看第 2 项及以后 → 回到第 1 项（旧行为）
 //   开启       = 点鲸鱼 = 往后推进一项；已是最后一项 → 收起泡泡（与「点泡泡」一致），下次点按从第 1 项开始
 var bubbleTapAdvance = false
+// 「点击工作提示泡泡自动跳转」总开关（仅「自定义泡泡」菜单可设，存在泡泡配置里，与 tapAdvance 并列）：
+//   开启（默认）= 点等待气泡 / 任务结束气泡 = 跳转到发起该挂起/该轮的会话 + 收起
+//   关闭       = 点等待/任务结束气泡只收起，不跳转（旧行为）
+var bubbleJumpOnTap = true
 
 // ===== v815：自定义泡泡框 —— 数据模型 / 归一化 / 渲染（P0：只读，外观必须与历史逐字符一致） =====
 // 背景：泡泡形状原先是**写死**在 bubbleBox.innerHTML 里的（大泡泡 path + 两个小泡泡 ellipse）。
@@ -17082,6 +17112,7 @@ function loadBubbleCfg() {
           bubbleCfg = d.config
           bubbleLib = (d.config.lib && Array.isArray(d.config.lib)) ? JSON.parse(JSON.stringify(d.config.lib)) : []
           bubbleTapAdvance = d.config.tapAdvance === true // v727
+          bubbleJumpOnTap = d.config.jumpOnTap !== false // 默认开启，只有显式存过 false 才关
           applyBubbleCfgSeq()
           maybeBubbleMigratePeak()
         }
@@ -18714,7 +18745,8 @@ function whaleClick() {
     // v777：等待交互提示期间点角色 —— 开关「点按角色关闭提示气泡」打开时，点角色＝收起这条等待提示
     //（默认关：保持"点角色不动等待提示"，只有点泡泡才关）。收起来后 pollWaitState 不会把它弹回来。
     if (bubbleScene && bubbleScene.kind === 'wait') {
-      if (waitCharCloseOn()) dismissWaitBubble()
+      // 点角色 = 只收起、不跳转（与「点气泡=跳转+收起」区分，给用户一个"只想关掉、不想切走"的入口）
+      if (waitCharCloseOn()) dismissWaitBubble(false)
       return
     }
     // v727：开启「点按角色推进泡泡队列」→ 点角色＝往后推进一项（不再回到第 1 项）；
@@ -18735,12 +18767,12 @@ function whaleClick() {
 function bubbleNext() {
   try {
     if (!bubbleShown) return
-    if (bubbleScene && bubbleScene.kind === 'cost') { hideCostBubble(); return }
+    if (bubbleScene && bubbleScene.kind === 'cost') { hideCostBubble(true); return }
     if (bubbleScene && bubbleScene.kind === 'alert') { hideUsageAlertBubble(); return }
     // v777：等待交互泡泡**可以点掉**（用户反馈「无法点击关闭」）。原来的实现在这里是 `return`
     //（设计意图是"别让误点把'正在等待你回答'收掉"），但真机上用户就是想把它点掉 ⇒ 改成：
     // 点泡泡 = 收起，并记住"这条挂起已被点掉"，pollWaitState 不再自动弹回（回答/批准或下一次新挂起照常）。
-    if (bubbleScene && bubbleScene.kind === 'wait') { dismissWaitBubble(); return }
+    if (bubbleScene && bubbleScene.kind === 'wait') { dismissWaitBubble(true); return }
     // v761（#161 C5）曾在此处"等待交互泡泡点它不关"（必须等被回答/批准）——
     // v777 按用户反馈改成"可点关"，语义与实现见上面的 dismissWaitBubble()；这里不再拦截。
     if (bubbleRoundOn && bubbleSeqIdx < bubbleSeq.length) { bubbleShowSeqNext(); return }
@@ -18767,7 +18799,7 @@ function hideBubble() {
   lastHintText = null
   bubbleCloseVisual()
 }
-function showCostBubble(amount) {
+function showCostBubble(amount, session) {
   if (!bubbleOn || !turnCostOn) return
   // v778：②区「冒泡提示」勾选框（events.turnCost.bubbleOn）以前**只写不读** —— 取消勾选照样弹。
   //   同类问题（"控件有值、没有消费方"）与本次修的音量滑块同源，一并接上：
@@ -18778,9 +18810,21 @@ function showCostBubble(amount) {
   } catch (err) {}
   // 进入系统泡泡队列(等级3):若同批有预警/预算,则排在它们之后展示
   // v851：带上"每轮消耗提示"自己的框（空 = 跟随保底）
-  whaleSysPush({ kind: 'cost', amount: amount, frameId: sysFrameIdOf('cost'), rank: 3 })
+  // 附带发起该轮的会话 id（session），供点击气泡时跳转到对应会话
+  whaleSysPush({ kind: 'cost', amount: amount, session: String(session || ''), frameId: sysFrameIdOf('cost'), rank: 3 })
 }
-function hideCostBubble() {
+function hideCostBubble(jump) {
+  // 用户点击消耗泡泡时（jump=true）且总开关「点击工作提示泡泡自动跳转」打开时，跳转到发起该轮的会话。
+  // ⚠️ 必须放在 whaleSysSwapNext() **之前**：swap 会把 whaleSysItem 换成下一项（甚至 shift 队列），
+  //    放到其后会在「消耗泡泡之后还排着预警/预算」时被早退吞掉跳转（Bug：点了个寂寞）。
+  // 会话 id 只取 whaleSysItem.session（swap 前仍是当前这条消耗项）；宿主已保证 lastTurn.session 非空，
+  //   不再回退到全局 lastCostSession（避免多会话 LIFO 下跳错会话）。
+  if (jump === true && bubbleJumpOnTap === true) {
+    var cur = whaleSysItem && whaleSysItem.kind === 'cost' ? whaleSysItem.session : ''
+    if (cur && typeof window.__dshWhaleOpenSession === 'function') {
+      try { window.__dshWhaleOpenSession(cur) } catch (err) {}
+    }
+  }
   // 与手动点击“第 n 次点击”一致:有下一项时保持打开淡切,无下一项才收起
   if (whaleSysSwapNext()) return
   bubbleClearAll()
@@ -19001,13 +19045,24 @@ function hideWaitBubble() {
 //     所以必须记住"用户把这条点掉了、别再自动弹回"，否则关掉后 1 秒内又回来 = 看起来根本关不掉。
 var waitDismissedId = '' // 被用户点掉的挂起 id（'' = 没有）
 var waitPendingId = '' // 宿主最近一次上报的挂起 id（用于"点掉的就是当前这条"）
+var waitPendingSession = '' // 宿主最近一次上报的挂起所属会话 id（用于点击跳转，见 dismissWaitBubble）
 function waitCharCloseOn() {
   try { return !!(((usageSet || {}).wait || {}).charClose) } catch (err) { return false }
 }
-// 用户主动收起等待气泡：记住这条挂起已被点掉，然后收起
-function dismissWaitBubble() {
+// 用户主动收起等待气泡：记住这条挂起已被点掉，然后收起。
+// 交互约定（与 hideCostBubble 同款 opt-in：显式传 jump=true 才跳转）：
+//   · 点气泡 = 跳转 + 收起（调用方传 jump=true），不加独立「去处理」按钮；
+//   · 点角色 = 只收起、不跳转（调用方传 jump=false 或不传，逃逸入口，须「点按角色关闭提示气泡」开关开启）。
+// 跳转还受总开关「点击工作提示泡泡自动跳转」（bubbleJumpOnTap）门控：关闭时一律只收起。
+// 跳转依赖 dsh.client 桥 window.__dshWhaleOpenSession；桥不存在（旧版 DSH / 未加载）时静默退化为「只收起」。
+function dismissWaitBubble(jump) {
   try {
     if (waitPendingId) waitDismissedId = waitPendingId
+    // 仅当显式要求跳转、总开关打开、有会话 id 且桥可用时才跳转；跳转失败/桥缺失静默，不影响收起
+    var sid = waitPendingSession
+    if (jump === true && bubbleJumpOnTap === true && sid && typeof window.__dshWhaleOpenSession === 'function') {
+      try { window.__dshWhaleOpenSession(sid) } catch (err) {}
+    }
     hideWaitBubble()
   } catch (err) {}
 }
@@ -22241,6 +22296,7 @@ function pollWaitState() {
           // 挂起已解除：收起泡泡，并允许下一次挂起照常响
           waitSeenId = ''
           waitPendingId = '' // v777：挂起解除 ⇒ "被点掉"的标记一并作废（下一次挂起照常冒泡）
+          waitPendingSession = ''
           waitDismissedId = ''
           if (typeof hideWaitBubble === 'function') hideWaitBubble()
           return
@@ -22250,6 +22306,7 @@ function pollWaitState() {
         // v777：这条挂起已经被用户点掉了 ⇒ 不再自动弹回（但仍然照常响铃判定与去重；回答/批准后
         // 上面的 !p 分支会把标记清掉，所以"下一次新的提问/授权"照常冒泡）。
         waitPendingId = String(p.id || '')
+        waitPendingSession = String(p.session || '') // 宿主 notePendingEvent 已把会话 id 放进 pending.session
         if (waitPendingId && waitPendingId === waitDismissedId) {
           // 什么都不做：既不显示，也不清 waitSeenId（同一挂起不重复响）
         } else {
@@ -22292,7 +22349,7 @@ function pollLastTurn() {
             try { localStorage.setItem('dshw-last-seq', String(lastCostSeq)) } catch (err) {}
             playTaskEndSound()
             if (d.turn !== null && d.amount !== null) {
-              showCostBubble(Number(d.amount))
+              showCostBubble(Number(d.amount), String(d.session || ''))
             }
           } else {
             // 记忆值已过期（host 端重置/文件丢失）：拉齐到当前值，避免永久不弹
@@ -22306,7 +22363,7 @@ function pollLastTurn() {
           try { localStorage.setItem('dshw-last-seq', String(lastCostSeq)) } catch (err) {}
           playTaskEndSound()
           if (d.turn !== null && d.amount !== null) {
-            showCostBubble(Number(d.amount))
+            showCostBubble(Number(d.amount), String(d.session || ''))
           }
         }
       })
